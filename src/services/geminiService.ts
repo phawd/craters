@@ -1,0 +1,58 @@
+import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+export async function analyzeArea(lat: number, lng: number, zoom: number) {
+  const prompt = `You are a military historian and satellite imagery analyst specialized in the Fort McClellan, Alabama area (Pelham Range and Main Post).
+  The user is focused on coordinates (${lat}, ${lng}) at zoom level ${zoom}.
+  
+  Analyze this area for:
+  1. PHYSICAL SIGNATURES: Identify potential craters (circular depressions), disturbed soil, vegetation anomalies (clusters of trees where training was heavy), and historical building footprints (concrete pads, foundations).
+  2. HISTORICAL CONTEXT: 
+     - Fort McClellan was active from 1917 to 1999.
+     - Mention specific units or schools (e.g., Chemical Corps, Military Police, WAC, Infantry).
+     - Discuss ordnance likely used in this sector based on typical range layouts (e.g., small arms, mortars, 105mm artillery, or chemical training stimulants).
+  3. CROSS-REFERENCE: Cross-reference identified physical signatures with known historical military activities at the base to assess the likelihood of these being related to ordnance testing, trench warfare training, or other subsurface disturbances.
+  4. HAZARD ANALYSIS: Specifically mention UXO (Unexploded Ordnance) or potential chemical remnants (Mustard gas, White Phosphorus) associated with this base's history.
+  
+  Format the response with elegant "Editorial" style headers and highly professional, informative paragraphs.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
+    });
+    return response.text;
+  } catch (error) {
+    console.error("Gemini analysis failed:", error);
+    return "Analysis unavailable at this time.";
+  }
+}
+
+export async function getQuickSearchPrompt(query: string) {
+  const prompt = `The user is searching for "${query}" within the Fort McClellan military reservation. 
+  Suggest 3 specific sets of coordinates (Latitude, Longitude) that represent important geographical features, historical building clusters, or known impact zones.
+  
+  User query: "${query}"
+  
+  Time periods to consider:
+  - WWI/WWII Camp McClellan (Infantry Training)
+  - Post-War Chemical Corps & MP School expansion
+  - BRAC Closure era
+  
+  Format as a valid JSON array of objects: [{ "lat": number, "lng": number, "name": string, "reason": string }]`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+    return JSON.parse(response.text || "[]");
+  } catch (error) {
+    console.error("Gemini search failed:", error);
+    return [];
+  }
+}
