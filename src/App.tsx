@@ -21,7 +21,7 @@ import {
 import MapComponent from './components/MapComponent';
 import { analyzeArea, getQuickSearchPrompt } from './services/geminiService';
 import { Crater } from './types';
-import { PELHAM_RANGE_CENTER } from './constants';
+import { PELHAM_RANGE_CENTER, MAP_PROVIDERS } from './constants';
 
 export default function App() {
   const [center, setCenter] = useState<[number, number]>(PELHAM_RANGE_CENTER);
@@ -32,6 +32,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'scan' | 'intel' | 'markers'>('scan');
+  const [mapProvider, setMapProvider] = useState(MAP_PROVIDERS.SATELLITE);
 
   // Initial historical markers
   useEffect(() => {
@@ -68,6 +69,9 @@ export default function App() {
   const runAnalysis = async () => {
     setIsAnalyzing(true);
     setAnalysis(null);
+    
+    // Determine if we are looking at historical/legacy layer
+    const isHistorical = mapProvider === MAP_PROVIDERS.LEGACY;
     const result = await analyzeArea(center[0], center[1], zoom);
     setAnalysis(result);
     setIsAnalyzing(false);
@@ -203,6 +207,29 @@ export default function App() {
                 exit={{ opacity: 0 }}
                 className="space-y-10"
               >
+                <div className="space-y-6">
+                  <h2 className="text-xs font-bold uppercase tracking-[0.3em] mb-4 opacity-40">Imagery Timeline</h2>
+                  <div className="flex gap-2 p-1 bg-[#1A1A1A]/5 rounded-sm border border-[#1A1A1A]/10">
+                    {[
+                      { id: 'satellite', label: 'Modern Satellite', provider: MAP_PROVIDERS.SATELLITE },
+                      { id: 'legacy', label: 'Historical Ref', provider: MAP_PROVIDERS.LEGACY },
+                      { id: 'ortho', label: 'USGS Ortho', provider: MAP_PROVIDERS.USGS_ORTHO },
+                    ].map((era) => (
+                      <button
+                        key={era.id}
+                        onClick={() => setMapProvider(era.provider)}
+                        className={`flex-1 py-2 text-[8px] font-bold uppercase tracking-widest transition-all rounded-[1px] ${
+                          mapProvider === era.provider 
+                            ? 'bg-white text-accent shadow-sm' 
+                            : 'opacity-40 hover:opacity-100'
+                        }`}
+                      >
+                        {era.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="space-y-6">
                   <h2 className="text-xs font-bold uppercase tracking-[0.3em] mb-4 opacity-40">Strategic Search</h2>
                   <form onSubmit={handleSearch} className="flex border-b border-[#1A1A1A]/20 pb-2 focus-within:border-accent group transition-all">
@@ -506,6 +533,7 @@ export default function App() {
           zoom={zoom}
           onAreaChange={handleAreaChange}
           onMarkerAdd={addCrater}
+          provider={mapProvider}
         />
 
         {/* HUD - Clean Editorial Layout */}

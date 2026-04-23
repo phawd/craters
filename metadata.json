@@ -1,6 +1,6 @@
 {
   "name": "McClellan Range Scout",
-  "description": "A specialized satellite analysis tool for exploring historical impact areas and identifying potential craters across the former Fort McClellan army post ranges.",
+  "description": "A specialized satellite analysis tool for exploring historical impact areas and identifying potential craters and training artifacts across the former Fort McClellan army post ranges.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

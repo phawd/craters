@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
@@ -49,24 +49,26 @@ interface MapComponentProps {
   zoom: number;
   onAreaChange: (lat: number, lng: number, zoom: number) => void;
   onMarkerAdd: (lat: number, lng: number) => void;
+  provider: string;
 }
 
 /** 
- * MapUpdater: Handles programmatic movement (e.g. from search results)
- * without interfering with user interaction.
+ * MapUpdater: Handles programmatic movement (e.g. from search results or findings list)
+ * while avoiding interference with manual user interaction.
  */
 function MapUpdater({ center, zoom }: { center: [number, number], zoom: number }) {
   const map = useMap();
-  const lastCenter = useRef<[number, number]>(center);
-  const lastZoom = useRef<number>(zoom);
 
   useEffect(() => {
-    // Only set view if the change comes from outside (props differ from last internal state)
-    // This allows the user to drag without the map snapping back
-    if (center[0] !== lastCenter.current[0] || center[1] !== lastCenter.current[1] || zoom !== lastZoom.current) {
+    const currentCenter = map.getCenter();
+    const currentZoom = map.getZoom();
+    
+    // Check if we are already broadly at the target to avoid redundant snaps
+    const isSameCenter = Math.abs(currentCenter.lat - center[0]) < 0.0001 && Math.abs(currentCenter.lng - center[1]) < 0.0001;
+    const isSameZoom = currentZoom === zoom;
+
+    if (!isSameCenter || !isSameZoom) {
       map.setView(center, zoom, { animate: true });
-      lastCenter.current = center;
-      lastZoom.current = zoom;
     }
   }, [center, zoom, map]);
 
@@ -86,7 +88,7 @@ function MapEvents({ onAreaChange, onMarkerAdd }: { onAreaChange: (lat: number, 
   return null;
 }
 
-export default function MapComponent({ craters, center, zoom, onAreaChange, onMarkerAdd }: MapComponentProps) {
+export default function MapComponent({ craters, center, zoom, onAreaChange, onMarkerAdd, provider }: MapComponentProps) {
   return (
     <MapContainer 
       center={center} 
@@ -98,8 +100,9 @@ export default function MapComponent({ craters, center, zoom, onAreaChange, onMa
       scrollWheelZoom={true}
     >
       <TileLayer
-        attribution='&copy; ESRI World Imagery'
-        url={MAP_PROVIDERS.SATELLITE}
+        attribution='&copy; ESRI & USGS'
+        url={provider}
+        key={provider}
       />
       
       <MapUpdater center={center} zoom={zoom} />
