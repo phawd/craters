@@ -15,7 +15,8 @@ import {
   AlertTriangle,
   ChevronRight,
   Crosshair,
-  Layers
+  Layers,
+  Download
 } from 'lucide-react';
 import MapComponent from './components/MapComponent';
 import { analyzeArea, getQuickSearchPrompt } from './services/geminiService';
@@ -41,6 +42,7 @@ export default function App() {
         lng: -85.8150,
         type: 'impact',
         confidence: 0.95,
+        radius_meters: 18,
         description: 'Primary impact zone at Pelham Range. Dense cluster of circular depressions visible in satellite imagery.',
         timestamp: new Date().toISOString()
       },
@@ -50,6 +52,7 @@ export default function App() {
         lng: -85.7877,
         type: 'structure',
         confidence: 0.88,
+        radius_meters: 35,
         description: 'Former training barracks and parade grounds. Potential foundational remnants.',
         timestamp: new Date().toISOString()
       }
@@ -84,10 +87,61 @@ export default function App() {
       lng,
       type: 'unknown',
       confidence: 0.5,
+      radius_meters: 10,
       description: 'User manual identification.',
       timestamp: new Date().toISOString()
     };
     setCraters([...craters, newCrater]);
+  };
+
+  const exportToCSV = () => {
+    if (craters.length === 0) return;
+    const headers = ['ID', 'Latitude', 'Longitude', 'Type', 'Confidence', 'Radius (m)', 'Description', 'Timestamp'];
+    const rows = craters.map(c => [
+      c.id,
+      c.lat,
+      c.lng,
+      c.type,
+      c.confidence,
+      c.radius_meters || '',
+      `"${c.description.replace(/"/g, '""')}"`,
+      c.timestamp
+    ]);
+    
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `mcclellan_census_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const exportToGeoJSON = () => {
+    if (craters.length === 0) return;
+    const geojson = {
+      type: "FeatureCollection",
+      features: craters.map(c => ({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [c.lng, c.lat]
+        },
+        properties: {
+          id: c.id,
+          type: c.type,
+          confidence: c.confidence,
+          radius_meters: c.radius_meters,
+          description: c.description,
+          timestamp: c.timestamp
+        }
+      }))
+    };
+    
+    const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `mcclellan_census_${new Date().toISOString().split('T')[0]}.geojson`;
+    link.click();
   };
 
   return (
@@ -167,18 +221,44 @@ export default function App() {
                   {searchResults.length > 0 && (
                     <div className="grid gap-3">
                       {searchResults.map((res: any, i) => (
-                        <div 
-                          key={i}
-                          onClick={() => {
-                            setCenter([res.lat, res.lng]);
-                            setZoom(16);
-                          }}
-                          className="editorial-card group cursor-pointer hover:border-accent transition-all duration-300"
-                        >
-                          <p className="text-[8px] font-mono opacity-30 mb-1 tracking-widest uppercase">Registry Ref: MCC-00{i+1}</p>
-                          <h4 className="font-serif text-lg leading-tight group-hover:italic mb-2 transition-all">{res.name}</h4>
-                          <p className="text-[10px] leading-relaxed opacity-50">{res.reason}</p>
-                        </div>
+                          <div 
+                            key={i}
+                            className="editorial-card group cursor-pointer hover:border-accent transition-all duration-300 relative"
+                            onClick={() => {
+                              setCenter([res.lat, res.lng]);
+                              setZoom(16);
+                            }}
+                          >
+                            <p className="text-[8px] font-mono opacity-30 mb-1 tracking-widest uppercase block">Registry Ref: MCC-00{i+1}</p>
+                            <div className="flex justify-between items-start">
+                              <h4 className="font-serif text-lg leading-tight group-hover:italic mb-2 transition-all">{res.name}</h4>
+                              {res.confidence !== undefined && (
+                                <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${res.confidence > 0.75 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                  {(res.confidence * 100).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] leading-relaxed opacity-50 mb-3">{res.reason}</p>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newCrater: Crater = {
+                                  id: `MCC-${Math.random().toString(36).substr(2, 4)}`,
+                                  lat: res.lat,
+                                  lng: res.lng,
+                                  type: res.type || 'impact',
+                                  confidence: res.confidence || 0.85,
+                                  radius_meters: res.radius_meters,
+                                  description: res.reason,
+                                  timestamp: new Date().toISOString()
+                                };
+                                setCraters([...craters, newCrater]);
+                              }}
+                              className="text-[9px] font-bold uppercase tracking-widest text-accent hover:underline"
+                            >
+                              Add to Census
+                            </button>
+                          </div>
                       ))}
                     </div>
                   )}
@@ -337,8 +417,30 @@ export default function App() {
                 className="space-y-8"
               >
                 <div className="flex items-center justify-between border-b border-[#1A1A1A]/10 pb-4">
-                  <h2 className="text-xs font-bold uppercase tracking-[0.3em] opacity-40">Census Findings</h2>
-                  <span className="text-[10px] font-mono px-3 py-1 bg-[#1A1A1A] text-white rounded-full">{craters.length} POINTS</span>
+                  <div className="space-y-1">
+                    <h2 className="text-xs font-bold uppercase tracking-[0.3em] opacity-40">Census Findings</h2>
+                    <span className="text-[9px] font-mono font-bold text-accent px-2 py-0.5 bg-accent/5 rounded-full">{craters.length} RECORDED POINTS</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={exportToCSV}
+                      disabled={craters.length === 0}
+                      className="p-2 border border-[#1A1A1A]/10 hover:bg-[#1A1A1A]/5 rounded-sm transition-all group relative disabled:opacity-30 disabled:hover:bg-transparent"
+                      title="Export CSV"
+                    >
+                      <Download className="w-4 h-4 opacity-40 group-hover:opacity-100" />
+                      <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#1A1A1A] text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">CSV</span>
+                    </button>
+                    <button 
+                      onClick={exportToGeoJSON}
+                      disabled={craters.length === 0}
+                      className="p-2 border border-[#1A1A1A]/10 hover:bg-[#1A1A1A]/5 rounded-sm transition-all group relative disabled:opacity-30 disabled:hover:bg-transparent"
+                      title="Export GeoJSON"
+                    >
+                      <Layers className="w-4 h-4 opacity-40 group-hover:opacity-100" />
+                      <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#1A1A1A] text-white text-[8px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">GeoJSON</span>
+                    </button>
+                  </div>
                 </div>
 
                 {craters.length === 0 ? (

@@ -1,21 +1,47 @@
-import { useState, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import { MAP_PROVIDERS, PELHAM_RANGE_CENTER } from '../constants';
 import { Crater } from '../types';
 
-// Fix for default marker icons in React-Leaflet
-const markerIcon = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png';
-const markerShadow = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
+// Cluster styles
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
-let DefaultIcon = L.icon({
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
-});
+// Custom marker icon with confidence ring
+const getConfidenceIcon = (confidence: number) => {
+  const color = 
+    confidence > 0.75 ? '#22C55E' : // Success (Green)
+    confidence > 0.4 ? '#EAB308' :  // Warning (Yellow)
+    '#EF4444';                      // Danger (Red)
 
-L.Marker.prototype.options.icon = DefaultIcon;
+  const opacity = 0.2 + (confidence * 0.8);
+
+  return L.divIcon({
+    html: `
+      <div class="relative w-10 h-10 -translate-x-1/4 -translate-y-1/4">
+        <div class="absolute inset-0 rounded-full border-2" style="border-color: ${color}; opacity: ${opacity}; transform: scale(${1 + (1 - confidence)}); transition: all 0.5s ease;"></div>
+        <div class="absolute inset-[15px] rounded-full bg-[#1A1A1A] border-2 border-white shadow-lg"></div>
+        <div class="absolute inset-[18px] rounded-full" style="background-color: ${color}"></div>
+      </div>
+    `,
+    className: 'confidence-marker',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20]
+  });
+};
+
+// Custom cluster icon generator
+const createClusterCustomIcon = (cluster: any) => {
+  return L.divIcon({
+    html: `<div class="flex items-center justify-center w-10 h-10 rounded-full bg-[#8C2F1E] text-white font-serif italic text-xs shadow-xl border border-white/20">
+            ${cluster.getChildCount()}
+          </div>`,
+    className: 'custom-marker-cluster',
+    iconSize: L.point(40, 40, true),
+  });
+};
 
 interface MapComponentProps {
   craters: Crater[];
@@ -25,11 +51,25 @@ interface MapComponentProps {
   onMarkerAdd: (lat: number, lng: number) => void;
 }
 
+/** 
+ * MapUpdater: Handles programmatic movement (e.g. from search results)
+ * without interfering with user interaction.
+ */
 function MapUpdater({ center, zoom }: { center: [number, number], zoom: number }) {
   const map = useMap();
-  useMemo(() => {
-    map.setView(center, zoom);
+  const lastCenter = useRef<[number, number]>(center);
+  const lastZoom = useRef<number>(zoom);
+
+  useEffect(() => {
+    // Only set view if the change comes from outside (props differ from last internal state)
+    // This allows the user to drag without the map snapping back
+    if (center[0] !== lastCenter.current[0] || center[1] !== lastCenter.current[1] || zoom !== lastZoom.current) {
+      map.setView(center, zoom, { animate: true });
+      lastCenter.current = center;
+      lastZoom.current = zoom;
+    }
   }, [center, zoom, map]);
+
   return null;
 }
 
@@ -54,6 +94,8 @@ export default function MapComponent({ craters, center, zoom, onAreaChange, onMa
       className="w-full h-full"
       zoomControl={true}
       doubleClickZoom={false}
+      dragging={true}
+      scrollWheelZoom={true}
     >
       <TileLayer
         attribution='&copy; ESRI World Imagery'
@@ -63,23 +105,64 @@ export default function MapComponent({ craters, center, zoom, onAreaChange, onMa
       <MapUpdater center={center} zoom={zoom} />
       <MapEvents onAreaChange={onAreaChange} onMarkerAdd={onMarkerAdd} />
 
+      {/* Circle Overlays for context/sizing */}
       {craters.map((crater) => (
-        <Marker key={crater.id} position={[crater.lat, crater.lng]}>
-          <Popup pointerEvents="auto">
-            <div className="p-2 min-w-[200px]">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-2 h-2 rounded-full bg-[#8C2F1E]" />
-                <h3 className="font-serif italic font-bold text-sm">Anomaly recorded</h3>
-              </div>
-              <p className="text-[11px] leading-relaxed opacity-70 border-l border-[#D9D7D2] pl-3 mb-3">{crater.description}</p>
-              <div className="flex justify-between items-center text-[9px] font-mono opacity-40 uppercase tracking-widest border-t border-[#D9D7D2] pt-2">
-                <span>Lat: {crater.lat.toFixed(4)}</span>
-                <span>Lng: {crater.lng.toFixed(4)}</span>
-              </div>
-            </div>
-          </Popup>
-        </Marker>
+        <Circle 
+          key={`circle-${crater.id}`}
+          center={[crater.lat, crater.lng]}
+          radius={crater.radius_meters || (crater.type === 'impact' ? 15 : 25)}
+          pathOptions={{
+            color: crater.confidence > 0.75 ? '#22C55E' : '#8C2F1E',
+            fillColor: crater.confidence > 0.75 ? '#22C55E' : '#8C2F1E',
+            fillOpacity: 0.1,
+            weight: 1,
+            dashArray: '5, 5'
+          }}
+        />
       ))}
+
+      <MarkerClusterGroup
+        chunkedLoading
+        iconCreateFunction={createClusterCustomIcon}
+        maxClusterRadius={50}
+      >
+        {craters.map((crater) => (
+          <Marker 
+            key={crater.id} 
+            position={[crater.lat, crater.lng]}
+            icon={getConfidenceIcon(crater.confidence || 0.5)}
+          >
+            <Popup pointerEvents="auto">
+              <div className="p-2 min-w-[200px]">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-2 h-2 rounded-full" 
+                      style={{ backgroundColor: crater.confidence > 0.75 ? '#22C55E' : '#8C2F1E' }} 
+                    />
+                    <h3 className="font-serif italic font-bold text-sm">
+                      {crater.type === 'impact' ? 'Impact Signature' : 'Anomaly'}
+                    </h3>
+                  </div>
+                  <span className="text-[8px] font-mono font-bold uppercase tracking-widest opacity-40">
+                    {(crater.confidence * 100).toFixed(0)}% Conf
+                  </span>
+                </div>
+                <p className="text-[11px] leading-relaxed opacity-70 border-l border-[#D9D7D2] pl-3 mb-2">
+                  {crater.description}
+                </p>
+                <div className="flex items-center justify-between text-[9px] font-mono opacity-40 uppercase tracking-widest border-t border-[#D9D7D2] pt-2 mt-1">
+                  <span>Ø {crater.radius_meters || (crater.type === 'impact' ? 15 : 25)}m</span>
+                  <div className="flex gap-2">
+                    <span>{crater.lat.toFixed(4)}</span>
+                    <span>{crater.lng.toFixed(4)}</span>
+                  </div>
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+      </MarkerClusterGroup>
     </MapContainer>
   );
 }

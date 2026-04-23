@@ -40,7 +40,7 @@ export async function getQuickSearchPrompt(query: string) {
   - Post-War Chemical Corps & MP School expansion
   - BRAC Closure era
   
-  Format as a valid JSON array of objects: [{ "lat": number, "lng": number, "name": string, "reason": string }]`;
+  Format as a valid JSON array of objects: [{ "lat": number, "lng": number, "name": string, "reason": string, "type": "impact" | "structure", "confidence": number (0-1), "radius_meters": number }]`;
 
   try {
     const response = await ai.models.generateContent({

@@ -4,6 +4,7 @@ export interface Crater {
   lng: number;
   type: 'impact' | 'structure' | 'unknown';
   confidence: number;
+  radius_meters?: number;
   description: string;
   timestamp: string;
 }
